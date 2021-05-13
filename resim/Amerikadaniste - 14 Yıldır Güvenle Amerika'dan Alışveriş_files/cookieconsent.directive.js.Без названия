@@ -1,0 +1,22 @@
+angular.module('directive.cookieconsent', ['ngCookies'])
+.directive('cookieconsent', function ($cookies) {
+    var siteLang = ($cookies.get('siteLang')) ? $cookies.get('siteLang') : 'tr_TR';
+    var template = "/app/directives/cookieconsent.directive.html"
+    if (siteLang == 'en_EN') template = "/app/directives/cookieconsent-en.directive.html";
+  return {
+    restrict: 'E',
+    controller : 'cookieConsentController',
+    templateUrl : template
+    }
+}).controller('cookieConsentController', function ($scope,$cookies) {
+    console.log('cookieConsent directive');
+      var _consent = $cookies.get('consent');
+      $scope.consent = function (consent) {
+        if (consent === undefined) {
+          return _consent;
+        } else if (consent) {
+          $cookies.put('consent', true);
+          _consent = true;        
+        }
+      };
+    });

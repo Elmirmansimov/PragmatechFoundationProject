@@ -1,0 +1,93 @@
+angular.module('directive.helper-contact', [])
+    .directive('helperContact', function ($cookies) {
+        var siteLang = ($cookies.get('siteLang')) ? $cookies.get('siteLang') : 'tr_TR';
+        var template = "/app/directives/helper-contact.directive.html";
+        if (siteLang == 'en_EN') template = "/app/directives/helper-contact-en.directive.html";
+        return {
+            restrict: 'E',
+            controller: 'helperContactController',
+            templateUrl: template
+        }
+    }).controller('helperContactController', function ($scope, contactHandler, $timeout, $cookies) {
+        console.log('helper directive');
+
+        $scope.show = false;
+
+        $scope.contact_blank = {
+            "FirstName": "",
+            "LastName": "",
+            "Phone": "",
+            "Subject": "",
+            "Message": ""
+        }
+
+        $scope.$watch('user', function () {
+            if ($scope.user) {
+                $scope.contact_blank = {
+                    "FirstName": $scope.user.Name,
+                    "LastName": $scope.user.Surname,
+                    "Email": "",
+                    "Phone": "",
+                    "Subject": "",
+                    "Message": ""
+                }
+                if ($scope.user.GSM) { $scope.contact_blank.Phone = $scope.user.GSM.Code + $scope.user.GSM.PhoneNumber; }
+                if ($scope.user.Mail) { $scope.contact_blank.Email = $scope.user.Mail; }
+            }
+        });
+        $scope.contact = {
+            "FirstName": "",
+            "LastName": "",
+            "Phone": "",
+            "Email": "",
+            "Subject": "",
+            "Message": ""
+        }
+
+        $scope.clearFaqDetail = function () {
+            if (!$cookies.get('openContactButton')) {
+                var expireDate = new Date();
+                expireDate.setDate(expireDate.getDate() + 1);
+                // Setting a cookie
+                $cookies.put('openContactButton', 'false', { 'expires': expireDate });
+            }
+            $scope.contactFormSent = false;
+            $scope.showContent = "page1";
+            $scope.show = !$scope.show;
+            $scope.contact = $scope.contact_blank;
+        }
+
+        $scope.sendContactButtonDisabled = function (contact) {
+            if (!contact.FirstName) { return true }
+            else if (!contact.LastName) { return true }
+            else if (!contact.Phone) { return true }
+            else if (!contact.Subject) { return true }
+            else if (!contact.Message) { return true }
+            else { return false }
+        }
+        $scope.sendContactMessage = function (contact) {
+            if ($scope.contactFormSending) return;
+            $scope.contactFormSending = true;
+            $scope.contactHandlerErrormessage = "";
+            var handler = contactHandler.save({}, contact, function () {
+                if (handler.Result == 200) {
+                    $scope.contact = $scope.contact_blank;
+                    $scope.showContent = 'page3';
+                    $scope.contactFormSending = false;
+                } else {
+                    $scope.contactHandlerErrormessage = handler.Message;
+                    $scope.contactFormSending = false;
+                }
+            });
+        }
+
+        /*if (!$cookies.get('openContactButton')) {
+               $timeout( function(){ 
+                   $scope.contactFormSent=false;
+                   $scope.showContent="page1";
+                   $scope.show=!$scope.show; 
+                   $scope.contact=$scope.contact_blank;
+               }, 3000 );
+       } */
+
+    }); 

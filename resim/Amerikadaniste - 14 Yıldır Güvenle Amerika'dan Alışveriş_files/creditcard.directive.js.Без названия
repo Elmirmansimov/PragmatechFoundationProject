@@ -1,0 +1,83 @@
+angular.module('directive.creditcard', [])
+  .directive('creditcard', function () {
+    return {
+      restrict: 'E',
+      transclude: true,
+      scope: {
+        ngModel: '=',
+        error: '@',
+        function: '&creditcardfunction',
+        creditcardShow: '=',
+        paypalShow: '=',
+        imghide: '=',
+        btnhide: '=',
+        creditcardProgress: '=',
+        freetrial: '=',
+        hasdetail: '=',
+        buttontext: '=',
+        nametext: '=',
+        surnametext: '=',
+        cardtext: '=',
+        expiretext: '=',
+        monthtext: '=',
+        yeartext: '=',
+        warning1: '=',
+        warning2: '=',
+        warning3: '=',
+        detailtext: '=',
+        activatetext: '=',
+        termsLink: '=',
+        showpromotioncode: '=',
+        promotiontext: '=',
+        cvcimagesource: '=',
+      },
+      templateUrl: '/app/directives/creditcard.directive.html',
+      controller: function ($scope) {
+        console.log('creditcard directive');
+        $scope.thisYear = new Date().getFullYear();
+        $scope.paymenttype = 'CreditCard';
+        $scope.creditCardType = '';
+        $scope.cardTypeImage = '';
+        $scope.showCardImage = false;
+
+        $scope.showCvcInfo = function() {
+          $scope.cvcIsVisible = true; 
+        };
+        
+        $scope.hideCvcInfo = function () {
+          $scope.cvcIsVisible = false;
+        };
+
+        function getCreditCardType(creditCardNumber) { 
+          // start without knowing the credit card type
+          var result = "unknown";
+          $scope.cardTypeImage = "assets/img/icon-cardblank.png";
+          $scope.showCardImage = true;
+          // first check for MasterCard
+          if (/^5[1-5]/.test(creditCardNumber)) {
+            result = "mastercard";
+            $scope.cardTypeImage = "assets/img/icon-mastercard.png";
+            $scope.showCardImage = true;
+          } 
+          // then check for Visa
+          else if (/^4/.test(creditCardNumber)) {
+            result = "visa";
+            $scope.cardTypeImage = "assets/img/icon-visa.png";
+            $scope.showCardImage = true;
+          }
+          // then check for AmEx
+          else if (/^3[47]/.test(creditCardNumber)) {
+            result = "amex";
+            $scope.cardTypeImage = "assets/img/icon-amex.png";
+            $scope.showCardImage = true;
+          } 
+          return result;
+        }
+        
+        $scope.$watch('ngModel.Number', function(newNumber){
+          $scope.creditCardType = getCreditCardType(newNumber);
+        });
+
+      }
+    }
+  });

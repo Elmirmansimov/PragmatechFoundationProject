@@ -1,0 +1,2406 @@
+const testApi = 'http://testv4.amerikadaniste.com/api/';
+const prepApi = 'http://preprodv4.amerikadaniste.com/api/';
+const prodApi = 'https://www.amerikadaniste.com/api/';
+
+const apiUrl = document.location.hostname === 'localhost' || document.location.hostname === '127.0.0.1' ? prepApi : document.location.origin + '/api/';
+
+angular.module('aiapp', [
+    'ngResource',
+    'ngCookies',
+    'ui.mask',
+    'ngMaterial',
+    'ngMessages',
+    'directive.creditcard',
+    'directive.helper-contact',
+    'directive.cookieconsent',
+    'vcRecaptcha',
+])
+    .config(['$httpProvider', '$mdDateLocaleProvider',
+        function (
+            $httpProvider,
+            $mdDateLocaleProvider
+        ) {
+            $httpProvider.interceptors.push('authenticationInterceptor');
+
+            // Turkish localization.
+            $mdDateLocaleProvider.months = ['ocak', 'şubat', 'mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+            $mdDateLocaleProvider.shortMonths = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+            $mdDateLocaleProvider.days = ['pazar', 'pazartesi', 'salı', 'çarşamba', 'perşembe', 'cuma', 'cumartesi'];
+            $mdDateLocaleProvider.shortDays = ['Pa', 'Pts', 'Sa', 'Ça', 'Pe', 'Cu', 'Cts'];
+
+            // to start on Monday.
+            $mdDateLocaleProvider.firstDayOfWeek = 1;
+
+            // Example uses moment.js to parse and format dates.
+            // $mdDateLocaleProvider.parseDate = function (dateString) {
+            //     var m = moment(dateString, 'MM/DD/YYYY', true);
+            //     console.log('m: ', m)
+            //     return m.toDate();
+            // };
+
+            $mdDateLocaleProvider.formatDate = function (date) {
+                var m = moment(date);
+                return m.format('MM/DD/YYYY');
+            };
+
+
+            // Allow only a day and month to be specified.
+            // This is required if using the 'M/D' format with moment.js.
+            // $mdDateLocaleProvider.isDateComplete = function (dateString) {
+            //     dateString = dateString.trim();
+
+            // // Look for two chunks of content (either numbers or text) separated by delimiters.
+            //     var re = /^(([a-zA-Z]{3,}|[0-9]{1,4})([ .,]+|[/-]))([a-zA-Z]{3,}|[0-9]{1,4})/;
+            //     return re.test(dateString);
+            // };
+
+            // $mdDateLocaleProvider.monthHeaderFormatter = function (date) {
+            //     return myShortMonths[date.getMonth()] + ' ' + date.getFullYear();
+            // };
+
+            // In addition to date display, date components also need localized messages
+            // for aria-labels for screen-reader users.
+
+            // $mdDateLocaleProvider.weekNumberFormatter = function (weekNumber) {
+            //     return weekNumber + '. hafta';
+            // };
+
+            $mdDateLocaleProvider.msgCalendar = 'Takvim';
+            $mdDateLocaleProvider.msgOpenCalendar = 'Takvimi aç';
+
+        }])
+    .factory('authenticationInterceptor', [
+        '$q',
+        '$window',
+        '$location',
+        '$injector',
+        '$cookies',
+        function (
+            $q,
+            $window,
+            $location,
+            $injector,
+            $cookies
+        ) {
+            return {
+                request: function (config) {
+                    var curl = config.url;
+                    if (curl.indexOf('amerikadaniste.com') == -1) return config;
+
+                    config.headers = config.headers || {};
+                    if ($cookies.get('bearer')) {
+                        config.headers['Authorization'] = "Bearer " + $cookies.get('bearer');
+                        config.headers['Content-Type'] = 'application/json';
+                    }
+                    return config;
+                },
+                response: function (response) {
+                    if (response.status === 401) {
+                        $window.location = '/';
+                    }
+                    return response || $q.when(response);
+                },
+                responseError: function (error) {
+                    console.log("//ERROR//");
+                    console.log(error);
+                    switch (error.status) {
+                        case 400:
+                            alert('400 - Bad Request! İstek hatalı (isteğin yapısı hatalı)');
+                            break;
+                        case 401:
+                            $cookies.put('targetUrl', $location.$$path);
+                            $cookies.remove('bearer');
+                            $window.location = '/giris';
+                            break;
+                        case 402:
+                            $window.location = '/uye-ol-uyelik-tipi';
+                            break;
+                        case 403:
+                            alert('403 - Payment Required! Ödeme gerekiyor. ');
+                            break;
+                        case 404:
+                            alert('404 - Not Found! İstek yapılan kaynağın (veya sayfanın) bulunamadı');
+                            break;
+                        case 405:
+                            alert('405 - Method Not Allowed! Sunucu , HTTP Method\'u kabul etmiyor.');
+                            break;
+                        case 500:
+                            alert('500 - Internal Server Error! Sunucuda bir hata oluştu ve istek karşılanamadı.');
+                            break;
+                        case 502:
+                            alert('502 - Geçersiz Ağ Geçidi! Gateway veya Proxy sunucusu, kaynağın bulunduğu sunucudan (upstream sunucusu) cevap alamıyor.');
+                            break;
+                        default:
+                            alert(error.status + ' - Opps! Bazı şeyler yanlış gitti. Lütfen sayfayı yenileyin');
+                            break;
+
+                    }
+                }
+            };
+        }]).controller('indexController', function (
+            $scope,
+            $sce,
+            $cookies,
+            buyForMeNewHandler,
+            autoCompleteHandler,
+            bannerHandler,
+            warningHandler,
+            vcRecaptchaService,
+            contactHandler
+        ) {
+            if(apiUrl == prodApi){
+                console.log = function() {};
+            }
+            console.log('Index Controller');
+            $scope.checkPage = function () {
+                var siteLang = $cookies.get('siteLang');
+                if (siteLang == "en_EN") {
+                    return window.open("/home", "_self");
+                }
+            }
+
+            $scope.contact = {
+                "FirstName": null,
+                "LastName": null,
+                "Phone": null,
+                "Email": null,
+                "Subject": null,
+                "Message": null,
+                "MessageCopyAccepted": false,
+                "NewsletterAccepted": false
+            };
+
+            console.log("this is your app's controller");
+            $scope.response = null;
+            $scope.widgetId = null;
+
+            $scope.rModel = {
+                key: '6LeZSMcZAAAAAPIP6KeOVHAxE9cWY8ffSMknn4Do'
+            };
+
+            $scope.setResponse = function (response) {
+                console.info('Response available', response);
+                $scope.response = response;
+            };
+
+            $scope.setWidgetId = function (widgetId) {
+                console.info('Created widget ID: %s', widgetId);
+                $scope.widgetId = widgetId;
+            };
+
+            $scope.cbExpiration = function () {
+                console.info('Captcha expired. Resetting response object');
+                vcRecaptchaService.reload($scope.widgetId);
+                $scope.response = null;
+            };
+
+            $scope.sendContactMessageFromPage = function (contact) {
+                $scope.sendContactMessageError = "";
+                $scope.contactMessageSending = true;
+                if ($scope.response) {
+                    contact.reCaptchaResponse = $scope.response;
+                    console.log(contact);
+
+                    var handler = contactHandler.save({}, contact, function () {
+                        if (handler.Result == 200) {
+                            $scope.sendContactMessageSuccess = true;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+
+                        } else if (handler.Result == 400 && handler.data && data.ReCaptchaResponse == $scope.response) {
+                            var msg = siteLang == "tr_TR" ?
+                                "Gerçek kullanıcı olduğunuzu onaylayamadık!" :
+                                "We cannot validate you are a human!";
+                            $scope.sendContactMessageError = handler.Message;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+                            return;
+                        } else if (handler.Result == 401) {
+                            $scope.sendContactMessageError = handler.Message;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+                            return;
+                        } else {
+                            $scope.contactMessageSending = false;
+                            $scope.sendContactMessageError = handler.Message;
+                        }
+                    });
+                } else {
+                    var msg = siteLang == "tr_TR" ?
+                        "Devam etmek için gerçek kullanıcı olduğunuzu onaylayınız lütfen!" :
+                        "To continue, please validate that you are a human!";
+                    alert(msg)
+                }
+            }
+
+            $scope.warningHandlerMessage = "";
+            $scope.showWarningHandler = false;
+
+            $scope.warningHandler = function () {
+
+                    var handler = warningHandler.get({}, function () {
+                        if (handler.Result == 200) {
+                            $scope.warningHandlerMessage = handler.Data;
+                            if($scope.warningHandlerMessage !== "" || $scope.warningHandlerMessage != null || $scope.warningHandlerMessage != undefined){
+                                $scope.showWarningHandler = true;
+                            }
+                        }
+                    });
+            };
+
+            $scope.warningHandler();
+
+
+
+            $scope.getbanner = function () {
+                //$scope.rows=$scope.rowsTest.Data;
+                //$scope.loader=true;
+                var handler = bannerHandler.get({}, function () {
+                    if (handler.Result == 200) {
+
+
+                        $scope.rows = handler.Data;
+
+                        for (var i = 0; i < $scope.rows.length; i++) {
+                            var htmldata = $sce.trustAsHtml($scope.rows[i].HtmlCode);
+                            console.log($scope.rows[i].HtmlCode);
+                            //$scope.rows[i].HtmlCode=htmldata
+                            //console.log(htmldata);
+                        }
+
+                        //$scope.loader=false;
+
+                    } else {
+                        // $scope.loader=false;
+                    }
+                });
+            }
+            var count = 0;
+            $scope.order = { url: "", name: "", feature: "", image: "", piece: 1, price: null, totalPrice: null };
+
+            $scope.calculatePrice = function (item) {
+                totalPrice = item.piece * item.price;
+                $scope.order.totalPrice = totalPrice;
+                return totalPrice;
+            }
+
+            $scope.startInstantBFM = function (item) {
+                if (!item || !item.productWebSite) return;
+                var url = item.productWebSite;
+
+                var expression = /^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/|www\.|\w.)[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$/;
+                var isURL = new RegExp(expression);
+                if (isURL.test(url)) {
+                    $('#cartModal').modal({
+                        show: true
+                    });
+                } else {
+                    alert('Lütfen link giriniz');
+                }
+            }
+
+            $scope.createNewBuyForMe = function (item) {
+                var obj = {
+                    'amount': item.amount,
+                    'color': 0,
+                    'combinePartId': 0,
+                    'pieces': 1,
+                    'productDetails': item.productDetails,
+                    'productWebSite': item.productWebSite,
+                    'size': 0,
+                    'usaCargoOption': 4
+                }
+                localStorage.setItem('itemFromHome', JSON.stringify(obj));
+
+                var handler = buyForMeNewHandler.save({}, obj, function () {
+                    if (handler.Result == 200) {
+                        localStorage.removeItem('itemFromHome');
+                        window.open("/user/buy-for-me/new", "_self");
+                        console.log("buyForMeNewHandler servisine Baglandı");
+                    } else {
+                        alert(handler['Message']);
+                        console.log("buyForMeNewHandler servisine Baglanamadı");
+                    }
+                });
+
+
+            }
+
+            function moveToSelected(element) {
+
+                if (element == "next") {
+                    if (count < 2) { count += 1; }
+                    var selected = $(".selected").next();
+                } else if (element == "prev") {
+                    if (count > -1) { count -= 1; }
+                    var selected = $(".selected").prev();
+                } else {
+                    var selected = element;
+                }
+
+                var next = $(selected).next();
+                var prev = $(selected).prev();
+                var prevSecond = $(prev).prev();
+                var nextSecond = $(next).next();
+
+                $(selected)
+                    .removeClass()
+                    .addClass("selected");
+
+                $(prev)
+                    .removeClass()
+                    .addClass("prev");
+                $(next)
+                    .removeClass()
+                    .addClass("next");
+
+                $(nextSecond)
+                    .removeClass()
+                    .addClass("nextRightSecond");
+                $(prevSecond)
+                    .removeClass()
+                    .addClass("prevLeftSecond");
+
+                $(nextSecond)
+                    .nextAll()
+                    .removeClass()
+                    .addClass("hideRight");
+                $(prevSecond)
+                    .prevAll()
+                    .removeClass()
+                    .addClass("hideLeft");
+            }
+
+            $("#prev").click(function () {
+                moveToSelected("prev");
+            });
+
+            $("#next").click(function () {
+                moveToSelected("next");
+            });
+
+            $scope.signOut = function () {
+                $scope.isLogin = $cookies.remove('bearer');
+            };
+
+            $scope.isLogin = $cookies.get('bearer');
+
+
+            $('a[href*="#"]').on('click', function (e) {
+                e.preventDefault();
+                $('html, body').animate({
+                    scrollTop: $($(this).attr('href')).offset().top - 100,
+                }, 500);
+            });
+            $('#brands').on('click', function (e) {
+                e.preventDefault()
+                $("html,body").stop();
+            });
+
+            $scope.brandSearchText = '';
+            $scope.brandSearchResult = [];
+
+            $scope.$watch('brandSearchText', function () {
+                if ($scope.brandSearchText == '') return;
+                var handler = autoCompleteHandler.get({ 'name': $scope.brandSearchText }, function () {
+                    $scope.brandsBarExpanded = true;
+                    console.log(handler);
+                    $scope.brandSearchResult = handler['Data'];
+                });
+            }, true);
+        })
+    .controller('signupController', [
+        '$scope',
+        '$cookies',
+        'signupHandler',
+        'membershipPaymentHandler',
+        'promotionCheckHandler',
+        'vcRecaptchaService',
+        function (
+            $scope,
+            $cookies,
+            signupHandler,
+            membershipPaymentHandler,
+            promotionCheckHandler,
+            vcRecaptchaService) {
+            console.log('Signup Controller');
+
+            // start of password display/hide block
+
+            const togglePassword = document.querySelector('#togglePassword');
+            const password = document.querySelector('#password');
+
+            if (togglePassword)
+                togglePassword.addEventListener('click', function (e) {
+                    // toggle the type attribute
+                    const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+                    password.setAttribute('type', type);
+                    // toggle the eye slash icon
+                    this.classList.toggle('fa-eye-slash');
+                });
+
+            $scope.myDate = new Date();
+            $scope.minDate = new Date(1923, 09, 29);
+            $scope.maxDate = new Date(
+                $scope.myDate.getFullYear() - 18,
+                $scope.myDate.getMonth() + 1,
+                $scope.myDate.getDate()
+            );
+            $scope.birthDate = new Date(1985, 0, 1, 3, 0);
+            $scope.dateChange = function () {
+
+                if ($scope.birthDate) {
+                    let a = $scope.birthDate;
+                    const sd = new Date(a).getDate();
+                    const sm = new Date(a).getMonth();
+                    const sy = new Date(a).getFullYear();
+                    const sdmy = (sd < 10 ? '0' + sd : sd) + '/' + (sm + 1 < 10 ? '0' + Number(sm + 1) : Number(sm + 1)) + '/' + sy;
+                    a = new Date(sy, sm, sd, 4);
+                    $scope.userData.birthDate = sdmy;
+                }
+            }
+
+            if (localStorage.basket && $cookies.get('bearer') && $cookies.get('PaidMember') == "true") {
+                window.open("/shopping", "_self");
+            }
+            // else if ($cookies.get('bearer') && $cookies.get('PaidMember') == "true") {
+            //     window.open('/user', "_self");
+            // }
+            function eigthteenYearsAgoDate() {
+                var d = new Date(),
+                    m = '' + (d.getMonth() + 1),
+                    dd = '' + d.getDate(),
+                    y = d.getFullYear() - 18;
+
+                if (m.length < 2) m = '0' + m;
+                if (dd.length < 2) dd = '0' + dd;
+
+                var ddd = [y, m, dd].join('-');
+
+                return ddd;
+            }
+            $scope.eigthteenYearsAgo = eigthteenYearsAgoDate();
+
+            $scope.membershipPaymentloader = false;
+            $scope.paymentType = [{ name: "MONTHLY", name_tr: "AYLIK", value: 1 },
+            { name: "ANNUALLY", name_tr: "YILLIK", value: 2 },
+            { name: "PROMO1", name_tr: "PROMO1", value: 3 },
+            { name: "PROMO2", name_tr: "PROMO2", value: 4 },
+            { name: "FREE_MEMBERSHIP", name_tr: "UCRETSIZ KAYIT", value: 5 }];
+
+            $scope.phoneCodeList = ["500", "501", "502", "503", "504", "505", "506", "507", "508", "509",
+                "511", "512", "516", "522", "523", "525", "526", "530", "531", "532", "533", "534", "535", "536", "537", "538", "539",
+                "540", "541", "542", "543", "544", "545", "546", "547", "548", "549", "550",
+                "551", "552", "553", "554", "555", "556", "557", "558", "559", "561", "563", "571", "588", "597"];
+            $scope.userData = {
+                "name": "",
+                "surname": "",
+                "mail": "",
+                "gsm": { "phoneNumber": "", "code": "" },
+                "password": "",
+                "birthDate": "",
+                "termReadPermission": false
+            }
+
+            var siteLang = getCookie("siteLang");
+
+            if (siteLang == "") setCookie("siteLang", "tr_TR", 365);
+
+            function checkPwd(str) {
+                if (str.length < 6) {
+                    return (alert("Parola çok kısa!"));
+                } else if (str.length > 30) {
+                    return (alert("Parola çok uzun!"));
+                } else if (str.search(/\d/) == -1) {
+                    return (alert("Parolanız en az bir rakam içermeli!"));
+                } else if (str.search(/[a-zA-Z]/) == -1) {
+                    return (alert("Parolanız en az bir harf içermeli!"));
+                } else if (str.search(/[^a-zA-Z0-9\!\@\#\$\%\^\&\*\(\)\_\+]/) != -1) {
+                    return (alert("Password isn't suitable!"));
+                }
+                return ("ok");
+            }
+
+            function dateFormatFixer(datestr) {
+                var d = datestr.split("/");
+                var n = d[1] + "/" + d[0] + "/" + d[2];
+                fixedDate = new Date(n);
+                return fixedDate;
+            }
+
+            // recaptcha starts
+            console.log("this is your app's controller");
+            $scope.response = null;
+            $scope.widgetId = null;
+
+            $scope.rModel = {
+                key: '6LeZSMcZAAAAAPIP6KeOVHAxE9cWY8ffSMknn4Do'
+            };
+
+            $scope.setResponse = function (response) {
+                console.info('Response available', response);
+                $scope.response = response;
+            };
+
+            $scope.setWidgetId = function (widgetId) {
+                console.info('Created widget ID: %s', widgetId);
+                $scope.widgetId = widgetId;
+            };
+
+            $scope.cbExpiration = function () {
+                console.info('Captcha expired. Resetting response object');
+                vcRecaptchaService.reload($scope.widgetId);
+                $scope.response = null;
+            };
+
+            //
+
+            $scope.signUp = function (userData) {
+
+                if ($scope.response) {
+                    $scope.signUpOnProgress = true;
+                    let code = userData.gsm.phoneNumber;
+                    let number = userData.gsm.phoneNumber;
+
+                    if ($scope.birthDate) {
+                        let a = $scope.birthDate;
+                        const sd = new Date(a).getDate();
+                        const sm = new Date(a).getMonth();
+                        const sy = new Date(a).getFullYear();
+                        const sdmy = (sd < 10 ? '0' + sd : sd) + '/' + (sm + 1 < 10 ? '0' + Number(sm + 1) : Number(sm + 1)) + '/' + sy;
+                        console.log("________", sd, sm + 1, sy, sdmy)
+                        a = new Date(sy, sm, sd, 4);
+                        $scope.userData.birthDate = sdmy;
+                    }
+
+                    var data = {
+                        "Name": userData.name,
+                        "Surname": userData.surname,
+                        "Mail": userData.mail,
+                        "GSM": {
+                            "Code": '5' + code.slice(0, 2),
+                            "PhoneNumber": number.slice(2, 10)
+                        },
+                        "Password": userData.password,
+                        "BirthDate": userData.birthDate,
+                        "CampaignPermission": userData.campaignPermission,
+                        "SiteNumber": 1,
+                        "LanguageID": (siteLang == 'en_EN') ? 2 : 1,
+                        "reCaptchaResponse": $scope.response
+                    }
+
+                    if (!data) {
+                        $scope.signUpOnProgress = false;
+                        console.error("Lütfen tüm bilgileri giriniz");
+                        return;
+                    };
+
+                    if (userData.password) {
+                        checkPwd(userData.password);
+                    };
+
+                    var signup = signupHandler.save({}, data, function () {
+                        $scope.signUpOnProgress = false;
+
+                        if (signup.Result == 200) {
+                            //Google Analytics Event
+                            /* ga('send', 'event', 'user', 'signup', 'user_lvl1'); */
+
+                            console.log("Success SignUp");
+                            $cookies.put('bearer', signup.Data);
+                            $cookies.put('PaidMember', false);
+                            if ($cookies.get('bearer')) {
+                                switch (siteLang) {
+                                    case "tr":
+                                        window.open("/uye-ol-uyelik-tipi", "_self");
+                                        break;
+                                    case "en":
+                                        window.open("/signup-membership-type", "_self");
+                                        break;
+                                    case "tr_TR":
+                                        window.open("/uye-ol-uyelik-tipi", "_self");
+                                        break;
+                                    case "en_EN":
+                                        window.open("/signup-membership-type", "_self");
+                                        break;
+                                    default:
+                                        window.open("/uye-ol-uyelik-tipi", "_self");
+                                }
+                            }
+                        } else if (signup.Result == 400 && signup.data && data.ReCaptchaResponse == $scope.response) {
+                            var msg = siteLang == "tr_TR" ?
+                                "Gerçek kullanıcı olduğunuzu onaylayamadık!" :
+                                "We cannot validate you are a human!";
+                            alert(msg);
+                            $scope.cbExpiration();
+                            $scope.signUpOnProgress = false;
+                            return;
+                        } else if (signup.Result == 401) {
+                            alert(signup.Message);
+                            $scope.cbExpiration();
+                            $scope.signUpOnProgress = false;
+                            return;
+
+                        } else {
+                            alert(signup.Message);
+                            $scope.cbExpiration();
+                            $scope.signUpOnProgress = false;
+                            return;
+                        }
+                    });
+                }
+            }
+
+            $scope.selected_plan = "monthly";
+
+            $scope.addMonths = function (months) {
+                var date = new Date();
+                var d = date.getDate();
+                date.setMonth(date.getMonth() + months);
+                if (date.getDate() != d) {
+                    date.setDate(0);
+                }
+                return date;
+            }
+
+            $scope.promotionCode = "";
+            $scope.sendPromotion = function (code) {
+                if (code) {
+                    var sendobj = {
+                        "PromoCode": code,
+                        "TotalAmount": "15",
+                        "PaymentType": "1" // register 1 , order 6 , bfm 7
+                    }
+                    var handler = promotionCheckHandler.save({}, sendobj, function () {
+                        $scope.promotionErrorMessage = '';
+                        if (handler.Result == 200) {
+                            $scope.promotionMessage = handler.Message;
+                            $scope.promotionDiscount = handler.Data.Discount;
+                        }
+                        else $scope.promotionErrorMessage = handler.Message;
+                    });
+                }
+            }
+
+            $scope.membershipPayment = function (page) {
+                if (page == "CreditCard") {
+                    $scope.errorCredicCardMessage = "";
+                    if (!$scope.CreditCard.Name) { $scope.errorCredicCardMessage = "Kart sahibi bilgilerini kontrol ediniz (Name)"; return; }
+                    if (!$scope.CreditCard.Surname) { $scope.errorCredicCardMessage = " Kart sahibi bilgilerini kontrol ediniz (Surname)"; return; }
+                    if (!$scope.CreditCard.Number) { $scope.errorCredicCardMessage = "Kart sahibi bilgilerini kontrol ediniz (Number)"; return; }
+                    if (!$scope.CreditCard.ExpireMonth) { $scope.errorCredicCardMessage = "Kart sahibi bilgilerini kontrol ediniz (ExpireMonth)"; return; }
+                    if (!$scope.CreditCard.ExpireYear) { $scope.errorCredicCardMessage = "Kart sahibi bilgilerini kontrol ediniz (ExpireYear)"; return; }
+                    if (!$scope.CreditCard.Cvc) { $scope.errorCredicCardMessage = "Kart sahibi bilgilerini kontrol ediniz (Cvc)"; return; }
+                    $scope.loadingCredicCard = true;
+                    var sendData = {
+                        "PaymentType": parseInt($scope.CreditCard.PaymentType),
+                        "PromoCode": $scope.CreditCard.Promotion,
+                        "Method": 1,
+                        "CreditCardData": {
+                            "CcName": $scope.CreditCard.Name,
+                            "CcSurName": $scope.CreditCard.Surname,
+                            "CcNumber": $scope.CreditCard.Number,
+                            "ExpireMonth": $scope.CreditCard.ExpireMonth,
+                            "ExpireYear": $scope.CreditCard.ExpireYear,
+                            "Cvc": $scope.CreditCard.Cvc
+                        }
+                    }
+                    $scope.membershipPaymentloader = true;
+                    var handler = membershipPaymentHandler.save({}, sendData, function () {
+                        if (handler.Result == 200) {
+                            /*  //Google Analytics Event
+                             var c = $scope.membershipCost;
+                             if (c >= 1 && c <= 4.98) ga('send', 'event', 'user', 'signup', 'user_lvl2');
+                             else if (c >= 4.99 && c <= 14.99) ga('send', 'event', 'user', 'signup', 'user_lvl3');
+                             else if (c >= 15) ga('send', 'event', 'user', 'signup', 'user_lvl4');
+                             else ga('send', 'event', 'user', 'signup', 'user_lvl_unknowncost');
+                             //endof Google Analytics Event */
+
+                            $scope.membershipPaymentloader = false;
+                            $scope.rows = [];
+                            $scope.loadingCredicCard = false;
+                            $cookies.put('PaidMember', true);
+                            if ($cookies.get('bearer')) {
+                                window.open('/uye-ol-tesekkurler', "_self");
+                            }
+                        } else {
+                            $scope.errorCredicCardMessage = handler.Message;
+                            $scope.membershipPaymentloader = false;
+                            $scope.loadingCredicCard = false;
+
+                        }
+                    });
+                } else if (page == "Paypal") {
+                    alert("Bu hizmet şu an için devre dışı");
+                }
+            }
+
+            $scope.signUpButtonDisabled = function (userData) {
+                if (!userData.name) { return true }
+                else if (!userData.surname) { return true }
+                else if (!userData.mail) { return true }
+                else if (!userData.gsm.phoneNumber) { return true }
+                else if (!userData.mail) { return true }
+                else if (!userData.password) { return true }
+                else if (!userData.termReadPermission) { return true }
+                else { return false }
+            }
+        }])
+    .controller('signinController', [
+        '$scope',
+        'signinHandler',
+        '$cookies',
+        '$location',
+        'forgotPasswordHandler',
+        'changePasswordHandler',
+        'resavePasswordHandler',
+        'vcRecaptchaService',
+        'contactHandler',
+        function (
+            $scope,
+            signinHandler,
+            $cookies,
+            $location,
+            forgotPasswordHandler,
+            changePasswordHandler,
+            resavePasswordHandler,
+            vcRecaptchaService,
+            contactHandler
+        ) {
+            console.log('signin Controller');
+            $scope.contact = {
+                "FirstName": null,
+                "LastName": null,
+                "Phone": null,
+                "Email": null,
+                "Subject": null,
+                "Message": null,
+                "MessageCopyAccepted": false,
+                "NewsletterAccepted": false
+            };
+
+            console.log("this is your app's controller");
+            $scope.response = null;
+            $scope.widgetId = null;
+
+            $scope.rModel = {
+                key: '6LeZSMcZAAAAAPIP6KeOVHAxE9cWY8ffSMknn4Do'
+            };
+
+            $scope.setResponse = function (response) {
+                console.info('Response available', response);
+                $scope.response = response;
+            };
+
+            $scope.setWidgetId = function (widgetId) {
+                console.info('Created widget ID: %s', widgetId);
+                $scope.widgetId = widgetId;
+            };
+
+            $scope.cbExpiration = function () {
+                console.info('Captcha expired. Resetting response object');
+                vcRecaptchaService.reload($scope.widgetId);
+                $scope.response = null;
+            };
+
+            $scope.sendContactMessageFromPage = function (contact) {
+                $scope.sendContactMessageError = "";
+                $scope.contactMessageSending = true;
+                if ($scope.response) {
+                    contact.reCaptchaResponse = $scope.response;
+                    console.log(contact);
+
+                    var handler = contactHandler.save({}, contact, function () {
+                        if (handler.Result == 200) {
+                            $scope.sendContactMessageSuccess = true;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+
+                        } else if (handler.Result == 400 && handler.data && data.ReCaptchaResponse == $scope.response) {
+                            var msg = siteLang == "tr_TR" ?
+                                "Gerçek kullanıcı olduğunuzu onaylayamadık!" :
+                                "We cannot validate you are a human!";
+                            $scope.sendContactMessageError = handler.Message;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+                            return;
+                        } else if (handler.Result == 401) {
+                            $scope.sendContactMessageError = handler.Message;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+                            return;
+                        } else {
+                            $scope.contactMessageSending = false;
+                            $scope.sendContactMessageError = handler.Message;
+                        }
+                    });
+                } else {
+                    var msg = siteLang == "tr_TR" ?
+                        "Devam etmek için gerçek kullanıcı olduğunuzu onaylayınız lütfen!" :
+                        "To continue, please validate that you are a human!";
+                    alert(msg)
+                }
+            }
+            $scope.signIn = function (userData) {
+                $scope.signInOnProgress = true;
+
+                var data = {
+                    "Mail": userData.mail,
+                    "Password": userData.password,
+                };
+
+                if (!data) {
+                    console.error("Lütfen Bilgilerinizi Giriniz"); return;
+                }
+                var signin = signinHandler.save({}, data, function () {
+                    $scope.signInOnProgress = false;
+                    if (signin.Result == 200) {
+                        console.log("Success SignIn");
+                        $cookies.put('bearer', signin.Data.Token);
+                        $cookies.put('PaidMember', signin.Data.PaidMember);
+                        ///uyenin kullanıcı odemesi yapıp yapmadıgı test ediliyor
+                        // if ($cookies.get('PaidMember') == "false") {
+                        //     window.open("/uye-ol-uyelik-tipi", "_self");
+                        // }
+                        if (localStorage.basket) {
+                            window.open("/shopping", "_self"); ///sepetinde urun varsa ve bu urun sepete eklenememişse urunu eklemek için yonlendieme yapıyor
+                        } else if (localStorage.itemFromHome) {
+                            window.open("/user/buy-for-me/new", "_self"); ///sepetinde urun varsa ve bu urun sepete eklenememişse urunu eklemek için yonlendieme yapıyor
+                        } else if ($cookies.get('bearer')) {
+                            if ($cookies.get('targetUrl')) {
+                                var targetUrl = $cookies.get('targetUrl');
+                                $cookies.remove('targetUrl');
+                                window.open(targetUrl, "_self");
+                            } else {
+                                window.open("/user/mailbox/list", "_self");
+                            }
+                        }
+                    } else {
+                        return alert(signin.Message);
+                    }
+                })
+            }
+
+            $scope.forgotPasswordMessage = "";
+            $scope.forgotPasswordError = "";
+            $scope.forgotPassword = function (email) {
+                var data = {
+                    "Email": email,
+                };
+                if (!email) {
+                    console.error("Lütfen Email Giriniz"); return;
+                }
+
+                var forgotPassword = forgotPasswordHandler.save({}, data, function () {
+                    if (forgotPassword.Result == 200) {
+                        $scope.forgotPasswordMessage = forgotPassword.Message;
+                        return;
+                    } else {
+                        $scope.forgotPasswordError = forgotPassword.Message;
+                        return;
+                    }
+                });
+
+            }
+
+            $scope.goMainPage = function () {
+                window.open("/", "_self");
+            }
+
+            function checkPassword(item) {
+                $scope.changePasswordError = "";
+                var siteLang = getCookie("siteLang");
+                if (!(new String(item.newpassword).valueOf() == new String(item.newpasswordagain).valueOf())) {
+                    if (siteLang == "tr_TR") {
+                        return $scope.changePasswordError = "Şifreler aynı olmalı!";
+                    } else { return $scope.changePasswordError = "Passwords should be the same!"; }
+                } else {
+                    if (siteLang == "tr_TR") {
+                        if (item.newpassword.length < 6) {
+                            return ($scope.changePasswordError = "Parola çok kısa!");
+                        } else if (item.newpassword.length > 30) {
+                            return ($scope.changePasswordError = "Parola çok uzun!");
+                        } else if (item.newpassword.search(/\d/) == -1) {
+                            return ($scope.changePasswordError = "Parola en az bir tane rakam içermeli!");
+                        } else if (item.newpassword.search(/[a-zA-Z]/) == -1) {
+                            return ($scope.changePasswordError = "Parola en az bir tane harf içermeli!");
+                        } else if (item.newpassword.search(/[^a-zA-Z0-9\!\@\#\$\%\^\&\*\(\)\_\+]/) != -1) {
+                            return ($scope.changePasswordError = "Parola uygun değil!");
+                        }
+                    } else {
+                        if (item.newpassword.length < 6) {
+                            return ($scope.changePasswordError = "Password too short!");
+                        } else if (item.newpassword.length > 30) {
+                            return ($scope.changePasswordError = "Password too long!");
+                        } else if (item.newpassword.search(/\d/) == -1) {
+                            return ($scope.changePasswordError = "Password need at least one number!");
+                        } else if (item.newpassword.search(/[a-zA-Z]/) == -1) {
+                            return ($scope.changePasswordError = "Password need at least one letter!");
+                        } else if (item.newpassword.search(/[^a-zA-Z0-9\!\@\#\$\%\^\&\*\(\)\_\+]/) != -1) {
+                            return ($scope.changePasswordError = "Password isn't suitable!");
+                        }
+                    }
+                }
+            }
+
+            $scope.changePasswordError = "";
+            $scope.saveNewPassword = function (item) {
+                var data = {
+                    "CurrentPassword": item.password,
+                    "NewPassword": item.newpassword,
+                };
+
+                checkPassword(item);
+                var changePassword = changePasswordHandler.save({}, data, function () {
+                    if (changePassword.Result == 200) {
+                        return window.open("/giris", "_self");
+                    } else {
+                        $scope.passwordError = changePassword.Message;
+                        return;
+                    }
+                })
+            }
+
+            $scope.resaveNewPassword = function (user) {
+                if (!user.newpassword) return $scope.changePasswordError = 'No password';
+                if (!user.newpasswordagain) return $scope.changePasswordError = 'No password';
+
+                var u = $location.absUrl();
+                var p = u.split('/');
+                var hash = p[p.length - 1];
+
+                if (!hash) return $scope.changePasswordError = 'No hash';
+
+                var data = {
+                    "ChangePasswordForm": {
+                        "NewPassword": user.newpassword,
+                        "CompareNewPassword": user.newpasswordagain
+                    },
+                    "ChangePasswordKey": hash
+                }
+                var resaveNewPassword = resavePasswordHandler.save({}, data, function () {
+                    if (resaveNewPassword.Result == 200) {
+                        return window.open("/giris", "_self");
+                    } else {
+                        $scope.changePasswordError = resaveNewPassword.Message;
+                        return;
+                    }
+                })
+            }
+
+
+            var togglePasswordNew = document.querySelector('#togglePasswordNew');
+            var passwordNew = document.querySelector('#inputPasswordNew');
+
+            var togglePasswordVerify = document.querySelector('#togglePasswordNewVerify');
+            var repeatPassword = document.querySelector('#inputPasswordNewVerify');
+
+            if (togglePasswordNew)
+                togglePasswordNew.addEventListener('click', function (e) {
+                    const type = passwordNew.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordNew.setAttribute('type', type);
+                    this.classList.toggle('fa-eye-slash');
+                });
+
+            if (togglePasswordVerify)
+                togglePasswordVerify.addEventListener('click', function (e) {
+                    const type = repeatPassword.getAttribute('type') === 'password' ? 'text' : 'password';
+                    repeatPassword.setAttribute('type', type);
+                    this.classList.toggle('fa-eye-slash');
+                });
+
+            // start
+            // giris / login sayfaları için
+            // toggle password view/hide
+            var togglePasswordView = document.querySelector('#togglePasswordView');
+            var inputPassword = document.querySelector('#inputPassword');
+
+            if (togglePasswordView)
+                togglePasswordView.addEventListener('click', function (e) {
+                    const type = inputPassword.getAttribute('type') === 'password' ? 'text' : 'password';
+                    inputPassword.setAttribute('type', type);
+                    this.classList.toggle('fa-eye-slash');
+                });
+            // end of login/giris passw toggl
+        }])
+    .controller('welcomeController', ['$scope', function ($scope) {
+        console.log('www Controller');
+        $scope.isBasket = (localStorage.basket) ? true : false;
+
+        /*$scope.getCurrentUser=function(){
+    	
+            var handler=getCurrentUserHandler.get({},function(){
+                if(handler.Result==200){
+                    $scope.user= handler.Data;
+                    console.log("getCurrentUserHandler servisine Baglandı"); 	
+                }else {
+                    console.error("getCurrentUserHandler servisine Baglanamadı"); 
+                }
+    
+            });
+        }
+        $scope.getCurrentUser();*/
+    }])
+    .controller('faqController', ['$scope', 'vcRecaptchaService', 'contactHandler', function ($scope,vcRecaptchaService,contactHandler) {
+
+        console.log('FAQ Controller');
+        console.log("this is your app's controller");
+        $scope.response = null;
+        $scope.widgetId = null;
+
+        $scope.rModel = {
+            key: '6LeZSMcZAAAAAPIP6KeOVHAxE9cWY8ffSMknn4Do'
+        };
+
+        $scope.setResponse = function (response) {
+            console.info('Response available', response);
+            $scope.response = response;
+        };
+
+        $scope.setWidgetId = function (widgetId) {
+            console.info('Created widget ID: %s', widgetId);
+            $scope.widgetId = widgetId;
+        };
+
+        $scope.cbExpiration = function () {
+            console.info('Captcha expired. Resetting response object');
+            vcRecaptchaService.reload($scope.widgetId);
+            $scope.response = null;
+        };
+
+        $scope.sendContactMessageFromPage = function (contact) {
+            $scope.sendContactMessageError = "";
+            $scope.contactMessageSending = true;
+            if ($scope.response) {
+                contact.reCaptchaResponse = $scope.response;
+                console.log(contact);
+
+                var handler = contactHandler.save({}, contact, function () {
+                    if (handler.Result == 200) {
+                        $scope.sendContactMessageSuccess = true;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+
+                    } else if (handler.Result == 400 && handler.data && data.ReCaptchaResponse == $scope.response) {
+                        var msg = siteLang == "tr_TR" ?
+                            "Gerçek kullanıcı olduğunuzu onaylayamadık!" :
+                            "We cannot validate you are a human!";
+                        $scope.sendContactMessageError = handler.Message;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+                        return;
+                    } else if (handler.Result == 401) {
+                        $scope.sendContactMessageError = handler.Message;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+                        return;
+                    } else {
+                        $scope.contactMessageSending = false;
+                        $scope.sendContactMessageError = handler.Message;
+                    }
+                });
+            } else {
+                var msg = siteLang == "tr_TR" ?
+                    "Devam etmek için gerçek kullanıcı olduğunuzu onaylayınız lütfen!" :
+                    "To continue, please validate that you are a human!";
+                alert(msg)
+            }
+        }
+
+    }])
+    .controller('whatToBuyController', ['$scope', function ($scope) {
+        console.log('What To Buy Controller');
+    }])
+    .controller('shoppingSitesController', ['$scope', function ($scope) {
+        console.log('Shopping Sites Controller');
+    }])
+    .controller('howItWorksController', ['$scope', 'vcRecaptchaService', 'contactHandler', function ($scope,vcRecaptchaService,contactHandler) {
+
+        console.log('How It Works Controller');
+        console.log("this is your app's controller");
+        $scope.response = null;
+        $scope.widgetId = null;
+
+        $scope.rModel = {
+            key: '6LeZSMcZAAAAAPIP6KeOVHAxE9cWY8ffSMknn4Do'
+        };
+
+        $scope.setResponse = function (response) {
+            console.info('Response available', response);
+            $scope.response = response;
+        };
+
+        $scope.setWidgetId = function (widgetId) {
+            console.info('Created widget ID: %s', widgetId);
+            $scope.widgetId = widgetId;
+        };
+
+        $scope.cbExpiration = function () {
+            console.info('Captcha expired. Resetting response object');
+            vcRecaptchaService.reload($scope.widgetId);
+            $scope.response = null;
+        };
+
+        $scope.sendContactMessageFromPage = function (contact) {
+            $scope.sendContactMessageError = "";
+            $scope.contactMessageSending = true;
+            if ($scope.response) {
+                contact.reCaptchaResponse = $scope.response;
+                console.log(contact);
+
+                var handler = contactHandler.save({}, contact, function () {
+                    if (handler.Result == 200) {
+                        $scope.sendContactMessageSuccess = true;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+
+                    } else if (handler.Result == 400 && handler.data && data.ReCaptchaResponse == $scope.response) {
+                        var msg = siteLang == "tr_TR" ?
+                            "Gerçek kullanıcı olduğunuzu onaylayamadık!" :
+                            "We cannot validate you are a human!";
+                        $scope.sendContactMessageError = handler.Message;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+                        return;
+                    } else if (handler.Result == 401) {
+                        $scope.sendContactMessageError = handler.Message;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+                        return;
+                    } else {
+                        $scope.contactMessageSending = false;
+                        $scope.sendContactMessageError = handler.Message;
+                    }
+                });
+            } else {
+                var msg = siteLang == "tr_TR" ?
+                    "Devam etmek için gerçek kullanıcı olduğunuzu onaylayınız lütfen!" :
+                    "To continue, please validate that you are a human!";
+                alert(msg)
+            }
+        }
+
+    }])
+    .factory('contactHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/contact', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }]).factory('resavePasswordHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/newpassword', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }]).controller('contactController', [
+        '$scope',
+        'contactHandler',
+        'vcRecaptchaService',
+        function (
+            $scope,
+            contactHandler,
+            vcRecaptchaService
+        ) {
+
+            var siteLang = getCookie("siteLang");
+            if (siteLang == "") setCookie("siteLang", "tr_TR", 365);
+
+            console.log('Contact Controller');
+            $scope.contact = {
+                "FirstName": null,
+                "LastName": null,
+                "Phone": null,
+                "Email": null,
+                "Subject": null,
+                "Message": null,
+                "MessageCopyAccepted": false,
+                "NewsletterAccepted": false
+            };
+
+            console.log("this is your app's controller");
+            $scope.response = null;
+            $scope.widgetId = null;
+
+            $scope.rModel = {
+                key: '6LeZSMcZAAAAAPIP6KeOVHAxE9cWY8ffSMknn4Do'
+            };
+
+            $scope.setResponse = function (response) {
+                console.info('Response available', response);
+                $scope.response = response;
+            };
+
+            $scope.setWidgetId = function (widgetId) {
+                console.info('Created widget ID: %s', widgetId);
+                $scope.widgetId = widgetId;
+            };
+
+            $scope.cbExpiration = function () {
+                console.info('Captcha expired. Resetting response object');
+                vcRecaptchaService.reload($scope.widgetId);
+                $scope.response = null;
+            };
+
+            //
+
+            $scope.sendContactMessageFromPage = function (contact) {
+                $scope.sendContactMessageError = "";
+                $scope.contactMessageSending = true;
+                if ($scope.response) {
+                    contact.reCaptchaResponse = $scope.response;
+                    console.log(contact);
+
+                    var handler = contactHandler.save({}, contact, function () {
+                        if (handler.Result == 200) {
+                            $scope.sendContactMessageSuccess = true;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+
+                        } else if (handler.Result == 400 && handler.data && data.ReCaptchaResponse == $scope.response) {
+                            var msg = siteLang == "tr_TR" ?
+                                "Gerçek kullanıcı olduğunuzu onaylayamadık!" :
+                                "We cannot validate you are a human!";
+                            $scope.sendContactMessageError = handler.Message;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+                            return;
+                        } else if (handler.Result == 401) {
+                            $scope.sendContactMessageError = handler.Message;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+                            return;
+                        } else {
+                            $scope.contactMessageSending = false;
+                            $scope.sendContactMessageError = handler.Message;
+                        }
+                    });
+                } else {
+                    var msg = siteLang == "tr_TR" ?
+                        "Devam etmek için gerçek kullanıcı olduğunuzu onaylayınız lütfen!" :
+                        "To continue, please validate that you are a human!";
+                    alert(msg)
+                }
+            }
+            $scope.contactSubjectOptionsOnPage = [
+                { name: "Benim İçin Al" },
+                { name: "Paket İşlemleri" },
+                { name: "Sipariş" },
+                { name: "Kargo/Gümrük Maliyet Hesaplama" },
+                { name: "Teslimat" },
+                { name: "Diğer" }
+            ];
+            $scope.sendContactButtonDisabled = function (contact) {
+                if (!contact.FirstName) { return true }
+                else if (!contact.LastName) { return true }
+                else if (!contact.Email) { return true }
+                else if (!contact.Phone) { return true }
+                else if (!contact.Subject) { return true }
+                else if (!contact.Message) { return true }
+                else if (contact.contactMessageSending) { return true }
+                else { return false }
+            }
+        }])
+    .controller('pricesController', ['$scope',
+    'vcRecaptchaService',
+    'contactHandler',
+    function ($scope,
+    vcRecaptchaService,
+    contactHandler) {
+        console.log('Prices Controller');
+        $scope.contact = {
+                "FirstName": null,
+                "LastName": null,
+                "Phone": null,
+                "Email": null,
+                "Subject": null,
+                "Message": null,
+                "MessageCopyAccepted": false,
+                "NewsletterAccepted": false
+            };
+
+            console.log("this is your app's controller");
+            $scope.response = null;
+            $scope.widgetId = null;
+
+            $scope.rModel = {
+                key: '6LeZSMcZAAAAAPIP6KeOVHAxE9cWY8ffSMknn4Do'
+            };
+
+            $scope.setResponse = function (response) {
+                console.info('Response available', response);
+                $scope.response = response;
+            };
+
+            $scope.setWidgetId = function (widgetId) {
+                console.info('Created widget ID: %s', widgetId);
+                $scope.widgetId = widgetId;
+            };
+
+            $scope.cbExpiration = function () {
+                console.info('Captcha expired. Resetting response object');
+                vcRecaptchaService.reload($scope.widgetId);
+                $scope.response = null;
+            };
+
+            $scope.sendContactMessageFromPage = function (contact) {
+                $scope.sendContactMessageError = "";
+                $scope.contactMessageSending = true;
+                if ($scope.response) {
+                    contact.reCaptchaResponse = $scope.response;
+                    console.log(contact);
+
+                    var handler = contactHandler.save({}, contact, function () {
+                        if (handler.Result == 200) {
+                            $scope.sendContactMessageSuccess = true;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+
+                        } else if (handler.Result == 400 && handler.data && data.ReCaptchaResponse == $scope.response) {
+                            var msg = siteLang == "tr_TR" ?
+                                "Gerçek kullanıcı olduğunuzu onaylayamadık!" :
+                                "We cannot validate you are a human!";
+                            $scope.sendContactMessageError = handler.Message;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+                            return;
+                        } else if (handler.Result == 401) {
+                            $scope.sendContactMessageError = handler.Message;
+                            $scope.cbExpiration();
+                            $scope.contactMessageSending = false;
+                            return;
+                        } else {
+                            $scope.contactMessageSending = false;
+                            $scope.sendContactMessageError = handler.Message;
+                        }
+                    });
+                } else {
+                    var msg = siteLang == "tr_TR" ?
+                        "Devam etmek için gerçek kullanıcı olduğunuzu onaylayınız lütfen!" :
+                        "To continue, please validate that you are a human!";
+                    alert(msg)
+                }
+            }
+
+
+
+        $scope.items = [{ id: "1", name: "Çanta", name_en: "Bag", weight: 3, image: "010-handbag.png", value: false, count: 0 },
+        { id: "2", name: "Kazak", name_en: "Sweater", weight: 3, image: "019-cardigan-1.png", value: false, count: 0 },
+        { id: "3", name: "Bot", name_en: "Boot", weight: 4, image: "008-boots.png", value: false, count: 0 },
+        { id: "4", name: "Çizme", name_en: "Boot", weight: 4, image: "007-boot.png", value: false, count: 0 },
+        { id: "5", name: "Aksesuar (Takı, kemer, kravat vb.)", name_en: "Accesories", weight: 3, image: "012-necklace.png", value: false, count: 0 },
+        { id: "6", name: "Dergi", name_en: "Magazine", weight: 1, image: "015-magazine.png", value: false, count: 0 },
+        { id: "7", name: "iPad, e-reader", name_en: "iPad, e-reader", weight: 2, image: "014-tablet.png", value: false, count: 0 },
+        { id: "8", name: "T-shirt, gömlek", name_en: "Tee, shirt", weight: 1, image: "003-t-shirt-copy.png", value: false, count: 0 },
+        { id: "9", name: "Ayakkabı", name_en: "Shoes", weight: 3, image: "006-high-heels.png", value: false, count: 0 },
+        { id: "10", name: "Kitap", name_en: "Book", weight: 3, image: "016-books.png", value: false, count: 0 },
+        { id: "11", name: "Pantolon", name_en: "Pants", weight: 3, image: "jeans.png", value: false, count: 0 },
+        { id: "12", name: "Gözlük", name_en: "Glasses", weight: 1, image: "011-eyeglasses-copy.png", value: false, count: 0 },
+        { id: "13", name: "Hırka", name_en: "Cardigan", weight: 3, image: "019-cardigan-1.png", value: false, count: 0 },
+        { id: "14", name: "CD, DVD", name_en: "CD, DVD", weight: 1, image: "017-compact-disc.png", value: false, count: 0 },
+        { id: "15", name: "Sneakers", name_en: "Sneakers", weight: 3, image: "sneaker-copy.png", value: false, count: 0 },
+        { id: "16", name: "Dijital Kamera", name_en: "Camera", weight: 2, image: "013-photo-camera.png", value: false, count: 0 }];
+
+        $scope.itemShowCount = 8;
+
+        $scope.package = { weight: null, width: null, length: null, height: null };
+        $scope.package.measureWeight = "lbs";
+        $scope.package.measureLenght = "inch";
+
+
+        $scope.valueShow = function () {
+            if ($scope.package.weight || $scope.package.width || $scope.package.height || $scope.package.length) {
+                return true;
+            } else { return false; }
+        }
+
+
+        $scope.selectedItem = [];
+        $scope.showMore = true;
+        $scope.viewMore = function () {
+            if ($scope.itemShowCount == 16) {
+                $scope.itemShowCount = 8;
+            } else if ($scope.itemShowCount == 8) {
+                $scope.itemShowCount = 16;
+            }
+        }
+
+        $scope.showCalculation = true;
+
+        $scope.totalValue = 0;
+        $scope.totalWeight = 0;
+        $scope.totalCount = 0;
+        $scope.itemIncrease = function (item) {
+            document.getElementById('showCalculatonBox').style.cssText = 'margin-top: 25px';
+            item.value = true;
+            item.count = item.count + 1;
+            $scope.totalWeight = $scope.totalWeight + item.weight;
+            $scope.totalCount = $scope.totalCount + 1;
+            calculateTotalValue($scope.totalWeight);
+            addItem(item);
+        }
+
+        $scope.itemDecrease = function (item) {
+            if (item.count <= 1) {
+                document.getElementById('showCalculatonBox').style.cssText = 'margin-top: 15px';
+                item.value = false;
+                item.count = item.count - 1;
+                $scope.totalWeight = Math.ceil($scope.totalWeight - item.weight);
+                $scope.totalCount = $scope.totalCount - 1;
+                calculateTotalValue($scope.totalWeight);
+                removeItem(item);
+
+            }
+            else {
+                item.count = item.count - 1;
+                $scope.totalWeight = $scope.totalWeight - item.weight;
+                $scope.totalCount = $scope.totalCount - 1;
+                calculateTotalValue($scope.totalWeight);
+            }
+        }
+
+        function addItem(item) {
+            if (!$scope.selectedItem.includes(item.name)) {
+                $scope.selectedItem.push(item.name);
+            }
+        }
+
+        function removeItem(item) {
+            for (var i = $scope.selectedItem.length - 1; i >= 0; i--) {
+                if ($scope.selectedItem[i] === item.name) {
+                    $scope.selectedItem.splice(i, 1);
+                }
+            }
+        }
+
+        $scope.clearAllData = function () {
+            $scope.selectedItem.splice(0, $scope.selectedItem.length);
+            $scope.totalCount = 0;
+            $scope.totalWeight = 0;
+            $scope.totalValue = 0;
+            for (i = 0; i <= $scope.items.length; i++)
+                if ($scope.items[i].value == true) {
+                    $scope.items[i].value = false;
+                    $scope.items[i].count = 0;
+                    $scope.showCalculation = true;
+                }
+        }
+
+
+        $scope.totalUPSPackageValue = 0;
+        $scope.totalFedexPackageValue = 0;
+        function calculateTotalValue(a) {
+            $scope.totalPackageValue = 0;
+            $scope.totalUPSPackageValue = 0;
+            $scope.totalFedexPackageValue = 0;
+            var firstPoundPrice = 22;
+            var firstPoundPriceUPS = 76.63;
+            var firstPoundPriceFedex = 75.34;
+            $scope.showCalculation = false;
+            $scope.totalValue = (Math.ceil(a) * 6) + firstPoundPrice;
+            $scope.totalUPSPackageValue = (Math.ceil(a) * 17.65) + firstPoundPriceUPS;
+            $scope.totalFedexPackageValue = (Math.ceil(a) * 17.36) + firstPoundPriceFedex;
+            if (a == 0) {
+                $scope.showCalculation = true;
+                $scope.package = { weight: 1, width: 1, length: 1, height: 1, measureWeight: "lbs", measureLenght: "inch" };
+                $scope.totalPackageValue = 28;
+            }
+        }
+
+
+        $scope.totalPackageValue = 0;
+        $scope.calculatePackageValue = function (item) {
+            if (!item) return;
+            var firstPoundPrice = 22;
+
+            $scope.package.weight = item.weight;
+            $scope.package.width = item.width;
+            $scope.package.length = item.length;
+            $scope.package.height = item.height;
+            $scope.package.measureWeight = item.measureWeight;
+            $scope.package.measureLenght = item.measureLenght;
+            if (!item.length) { item.length = 0; }
+            if (!item.width) { item.width = 0; }
+            if (!item.height) { item.height = 0; }
+            if (!item.weight) { item.weight = 0; }
+            // if (item.weight < 1) { return alert("Lütfen Pozitif Değerler Giriniz!"); }
+            if (item.length < 0 || item.width < 0 || item.height < 0) { return alert("Lütfen Pozitif Değerler Giriniz!"); }
+
+            if (item.measureWeight == "kg") {
+                $scope.firstWeight = item.weight;
+                item.weight = Math.ceil(item.weight * (1 / 0.454));
+                $scope.package.measureWeight = item.measureWeight;
+            }
+            if (item.measureLenght == "cm") {
+                $scope.firstLength = item.length;
+                $scope.firstWidth = item.width;
+                $scope.firstHeight = item.height;
+                item.length = item.length * (1 / 2.54);
+                item.width = item.width * (1 / 2.54);
+                item.height = item.height * (1 / 2.54);
+                $scope.package.measureLenght = item.measureLenght;
+            }
+            if (item.weight >= (item.width * item.length * item.height) / 139) {
+                $scope.totalPackageValue = Math.ceil(firstPoundPrice + (item.weight * 6));
+                if (item.measureLenght == "cm") {
+                    item.length = $scope.firstLength;
+                    item.width = $scope.firstWidth;
+                    item.height = $scope.firstHeight;
+                }
+                if (item.measureWeight == "kg") {
+                    item.weight = $scope.firstWeight;
+                }
+            } else {
+                value = Math.ceil((item.width * item.length * item.height) / 139) * 6;
+                $scope.totalPackageValue = Math.round(((value + firstPoundPrice) * 100) / 100).toFixed(2);
+                if (item.measureLenght == "cm") {
+                    item.length = $scope.firstLength;
+                    item.width = $scope.firstWidth;
+                    item.height = $scope.firstHeight;
+                }
+                if (item.measureWeight == "kg") {
+                    item.weight = $scope.firstWeight;
+                }
+            }
+        }
+    }])
+    .directive('header', function () {
+        return {
+            restrict: 'E',
+            templateUrl: '/app/templates/header.html',
+            controller: function ($scope, $cookies, $window, logoutHandler,getBfmListHandler,getCurrentUserHandler) {
+                console.log('Header Directive');
+                var msTr = {
+                    list: [
+                       {
+                            'name': 'Alışveriş',
+                            'url': '/shopping'
+                        },
+                        {
+                            'name': 'Ücretler',
+                            'url': '/amerikadan-kargo-ucretleri'
+                        },
+                        {
+                            'name': 'Nasıl Çalışır',
+                            'url': '/nasil-calisir'
+                        },
+                        {
+                            'name': 'Blog',
+                            'url': 'https://blog.amerikadaniste.com/'
+                        },
+                        {
+                            'name': 'SSS',
+                            'url': '/sikca-sorulan-sorular'
+                        }
+                    ],
+                    signIn: {
+                        'name': 'Giriş Yap',
+                        'url': '/giris'
+                    },
+
+                    signUp: {
+                        'name': 'Üye Ol',
+                        'url': '/uye-ol'
+                    },
+
+
+                    mailbox: {
+                        'name': 'Posta Kutum',
+                        'url': '/user'
+                    },
+
+                    account: {
+                        'name': 'Hesabım',
+                        'url': '/user/my-account/my-membership-information'
+                    },
+
+                    bfm: {
+                        'name': 'Benim İçin Al',
+                        'url': '/user/buy-for-me/new'
+                    },
+
+                    logOut: { 'name': 'Çıkış' }
+                };
+
+                var msEn = {
+                    list: [
+                      {
+                            'name': 'Shopping',
+                            'url': '/shopping'
+                        },
+                        {
+                            'name': 'Prices',
+                            'url': '/prices'
+                        },
+                        {
+                            'name': 'How it Works?',
+                            'url': '/how-it-works'
+                        },
+                        {
+                            'name': 'Blog',
+                            'url': 'https://blog.amerikadaniste.com/'
+                        },
+                        {
+                            'name': 'FAQ',
+                            'url': '/frequently-asked-questions'
+                        }
+                    ],
+                    signIn: {
+                        'name': 'Sign In',
+                        'url': '/signin'
+                    },
+
+                    signUp: {
+                        'name': 'Sign Up',
+                        'url': '/signup'
+                    },
+
+                    mailbox: {
+                        'name': 'Mailbox',
+                        'url': '/user'
+                    },
+
+                    account: {
+                        'name': 'My Account',
+                        'url': '/user/my-account/my-membership-information'
+                    },
+
+                    bfm: {
+                        'name': 'Buy For Me',
+                        'url': '/user/buy-for-me/new'
+                    },
+
+                    logOut: { 'name': 'Log Out' }
+                };
+
+                var siteLang = getCookie("siteLang");
+
+                if (siteLang == "") setCookie("siteLang", "tr_TR", 365);
+
+                $scope.chosenLang = siteLang;
+
+                switch (siteLang) {
+                    case "tr_TR":
+                        $scope.headerNav = msTr;
+                        break;
+                    case "en_EN":
+                        $scope.headerNav = msEn;
+                        break;
+                    default:
+                        $scope.headerNav = msTr;
+                }
+
+                $scope.logout = function () {
+                    var handler = logoutHandler.get({}, function () {
+                        if (handler.Result == 200) {
+                            $cookies.remove('bearer');
+                            $cookies.remove('PaidMember');
+                            $cookies.remove('ASP.Net_SessionId');
+                            window.location.href = "/";
+                            console.log("logoutHandler servisine Baglandı");
+                        } else {
+                            console.error("logoutHandler servisine Baglanamadı");
+                        }
+                    });
+
+                }
+
+                $scope.isLogin = $cookies.get('bearer');
+                $scope.isPaid = ($cookies.get('PaidMember') == 'true') ? true : false;
+
+                if ($cookies.get('bearer')) {
+                    if($scope.isPaid == true){
+                        var shoppingCartHandler = getBfmListHandler.get({}, function () {
+                            if (shoppingCartHandler.Result == 200) {
+                                $scope.cartItemCount = shoppingCartHandler.Data.length
+                            }
+                            else {
+                                console.log(shoppingCartHandler.Message)
+                        }});}
+                    var handler = getCurrentUserHandler.get({}, function () {
+                        if (handler.Result == 200) {
+                            $scope.user = handler.Data;
+                            dengage('setContactKey', $scope.user.UserId);
+                        } else {
+                            console.log(handler.Message);
+                        }
+
+                    });
+                }
+            }
+        }
+    })
+    .directive('banner', function () {
+        return {
+            restrict: 'C',
+            template: '<div></div>',
+            controller: function ($scope) {
+
+                console.log('Banner Directive');
+
+            }
+        }
+    }).factory('logoutHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/signout', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }]).factory('subscribeHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/subscribe', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }]).factory('getBfmListHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'bfm/getBfmProductList?isBasket=1', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }]).factory('getCurrentUserHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/getcurrentuser', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }]).directive('footer', function () {
+        return {
+            restrict: 'E',
+            templateUrl: '/app/templates/footer.html',
+            controller: function ($scope, subscribeHandler) {
+                $scope.msFooter = [];
+                console.log('Footer Directive');
+
+                var msFooterTr = [{
+                    'name': 'Hakkımızda',
+                    'url': '/hakkimizda'
+                },
+                {
+                    'name': 'Gizlilik Politikası',
+                    'url': '/gizlilik-politikasi'
+                },
+                {
+                    'name': 'Sıkça Sorulan Sorular',
+                    'url': '/sikca-sorulan-sorular'
+                },
+                {
+                    'name': 'Kullanım Şartları',
+                    'url': '/kullanim-sartlari'
+                },
+                {
+                    'name': 'İletişim',
+                    'url': '/iletisim'
+                }];
+
+                var msFooterEn = [{
+                    'name': 'About Us',
+                    'url': '/about-us'
+                },
+                {
+                    'name': 'Privacy Policy',
+                    'url': '/privacy-policy'
+                },
+                {
+                    'name': 'Frequently Asked Questions',
+                    'url': '/frequently-asked-questions'
+                },
+                {
+                    'name': 'Terms & Conditions',
+                    'url': '/terms-and-conditions'
+                },
+                {
+                    'name': 'Contact',
+                    'url': '/contact'
+                }];
+
+                const footerObjectEn = {
+                    follow_us: {
+                        'title': 'Follow Us',
+                        'text': "To be informed about opportunities in the US;",
+                        'button': 'Let Me Know',
+                        'copyrightText': "Copyright Amerikadaniste © 2006 - 2020",
+                        'placeholder': 'E-mail address'
+                    },
+                    partners: {
+                        'name': 'Our partners',
+                    },
+                    menu: {
+                        'name': 'Menu'
+                    }
+                }
+
+                const footerObjectTr = {
+                    follow_us: {
+                        'title': 'Bizi Takip Edin',
+                        'text': "Amerika'daki fırsatlardan haberdar olmak için;",
+                        'button': 'Haberdar Et',
+                        'copyrightText': "Copyright Amerikadaniste © 2006 - 2020",
+                        'placeholder': 'E-posta adresi'
+                    },
+                    partners: {
+                        'name': 'Partnerlerimiz',
+                    },
+                    menu: {
+                        'name': 'Menü'
+                    }
+                }
+
+
+                var siteLang = getCookie("siteLang");
+
+                if (siteLang == "") setCookie("siteLang", "tr_TR", 365);
+
+                $scope.chosenLang = siteLang;
+
+                switch (siteLang) {
+                    case "tr_TR":
+                        $scope.footerNav = msFooterTr;
+                        $scope.footerNavObject = footerObjectTr;
+                        $scope.chosenLang = siteLang;
+                        $scope.valentinesshoutbar = "Anneler Günü Hediye Önerileri için Tıklayın";
+                        $scope.valentinestext = "Anneler Günü Hediye Önerileri"
+                        break;
+                    case "en_EN":
+                        $scope.footerNav = msFooterEn;
+                        $scope.footerNavObject = footerObjectEn;
+                        $scope.chosenLang = siteLang;
+                        $scope.valentinesshoutbar = "Click for Mother's Day Gift Suggestions";
+                        $scope.valentinestext = "Mother's Day Gift Offers"
+                        break;
+                    default:
+                        $scope.footerNav = msFooterTr;
+                }
+                $scope.letMeKnow = function (Email) {
+                    $scope.letMeKnowError = "";
+                    var handler = subscribeHandler.save({}, { 'Email': Email }, function () {
+                        if (handler.Result == 200) {
+                            $("#letMeKnowModal").modal("show");
+                            console.log("subscribeHandler servisine Baglandı");
+                        } else {
+                            $scope.letMeKnowError = handler.Message;
+                            $("#letMeKnowModal").modal("show");
+                            console.error("subscribeHandler servisine Baglanamadı");
+                        }
+                    });
+                }
+
+               //countdown
+
+              function changeText(obj, text) {
+                  obj.innerText = text;
+              }
+
+
+            /*   var count = new Date("nov 26,2020 00:00:00").getTime();
+                var x = setInterval(function () {
+                    var now = new Date().getTime();
+                    var d = count - now;
+
+                   
+                    var days = Math.floor(d / (1000 * 60 * 60 * 24));
+                    var hours = Math.floor((d % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    var minutes = Math.floor((d % (1000 * 60 * 60)) / (1000 * 60));
+                    var seconds = Math.floor((d%(1000*60))/1000);
+                    
+                    document.getElementById("days").innerHTML = days;
+                    document.getElementById("hours").innerHTML = hours;
+                    document.getElementById("minutes").innerHTML = minutes;
+                    document.getElementById("seconds").innerHTML = seconds;
+                    if (d <= 0) {
+                        clearInterval(x);
+                    }
+
+
+                }, 1000); */
+
+                $scope.chooseLanguage = function (lang) {
+                    setCookie("siteLang", lang, 365);
+                    var loc = window.location.pathname;
+                    console.log(loc);
+                    var staticPages = [
+                        { tr: '/', en: '/home' },
+                        { tr: '/hakkimizda', en: '/about-us' },
+                        { tr: '/amerikadan-kargo-ucretleri', en: '/prices' },
+                        { tr: '/iletisim', en: '/contact' },
+                        { tr: '/sikca-sorulan-sorular', en: '/frequently-asked-questions' },
+                        { tr: '/giris', en: '/signin' },
+                        { tr: '/nasil-calisir', en: '/how-it-works' },
+                        { tr: '/benim-icin-al', en: '/buy-for-me' },
+                        { tr: '/a-prime-day', en: '/a-primeday-en' },
+                        { tr: '/black-friday', en: '/black-friday-en' },
+                        { tr: '/black-friday-indirimleri', en: '/black-friday-indirimleri-en' },
+                        { tr: '/hizmetler', en: '/services' },
+                        { tr: '/kullanim-sartlari', en: '/terms-and-conditions' },
+                        { tr: '/alisveris', en: '/shopping' },
+                        { tr: '/gizlilik-politikasi', en: '/privacy-policy' },
+                        { tr: '/uye-ol', en: '/signup' },
+                        { tr: '/uye-ol-uyelik-tipi', en: '/signup-membership-type' },
+                        { tr: '/sifremi-unuttum', en: '/forgot-password' },
+                        { tr: '/sifre-degistir', en: '/change-password' },
+                        { tr: '/sifre-yenileme', en: '/new-password' }
+                    ];
+                    for (var i = 0; i < staticPages.length; i++) {
+                        if (loc == staticPages[i].en) return window.location.href = staticPages[i].tr;
+                        if (loc == staticPages[i].tr) return window.location.href = staticPages[i].en;
+                    }
+                    window.location.reload();
+                }
+
+            }
+        }
+    })
+    .directive('brandsList', function () {
+        return {
+            restrict: 'E',
+            templateUrl: '/app/templates/brands-list.html',
+            controller: function ($scope) {
+                function goto(e) {
+                    window.location.href = e.getAttribute('href');
+                }
+                console.log('brandsList Directive');
+
+                var brands = [
+
+                    { 'name': 'Amazon', 'seoName': 'amazon', 'link': '/original/amazon' },
+                    { 'name': 'Ebay', 'seoName': 'ebay', 'link': 'https://www.ebay.com/' },
+                    { 'name': 'Kohl\'s', 'seoName': 'kohl-s', 'link': '/original/kohl-s' },
+                    { 'name': '6pm', 'seoName': '6pm', 'link': 'https://www.6pm.com/' },
+                    { 'name': 'The Children\'s Place', 'seoName': 'the-children-s-place', 'link': 'https://www.childrensplace.com/' },
+                    { 'name': 'Hanes', 'seoName': 'hanes', 'link': '/original/hanes' },
+                    { 'name': 'Journeys', 'seoName': 'journeys', 'link': 'https://www.journeys.com/' },
+                    { 'name': 'Old Navy', 'seoName': 'old-navy', 'link': 'https://oldnavy.gap.com/' },
+                    { 'name': 'Target', 'seoName': 'target', 'link': '/original/target' },
+                    { 'name': 'Victoria\'s Secret', 'seoName': 'victoria-s-secret', 'link': '/original/victoria-s-secret' },
+                    { 'name': 'Nike', 'seoName': 'nike', 'link': '/original/nike' },
+                    { 'name': 'Alexander McQueen', 'seoName': 'alexander-mcqueen', 'link': '/original/alexander-mcqueen' },
+                    { 'name': 'GUESS', 'seoName': '-guess', 'link': '/original/-guess' },
+                    { 'name': 'Ralph Lauren', 'seoName': 'ralphlauren', 'link': '/original/ralphlauren' },
+                    { 'name': 'Calvin Klein', 'seoName': 'calvinklein', 'link': '/original/calvinklein' },
+                    { 'name': 'Skechers', 'seoName': 'skechers', 'link': '/original/skechers' },
+                    { 'name': 'DKNY', 'seoName': 'dkny', 'link': '/original/dkny' },
+                    { 'name': 'Adidas', 'seoName': 'adidas', 'link': '/original/adidas' },
+                    { 'name': 'Bloomingdales', 'seoName': 'bloomingdales', 'link': '/original/bloomingdales' },
+                    { 'name': 'Barneys New York', 'seoName': 'barneysnewyork', 'link': '/original/barneysnewyork' },
+                    { 'name': 'Pottery Barn Kids', 'seoName': 'pottery-barn-kids', 'link': '/original/pottery-barn-kids' },
+                    { 'name': 'Bebe', 'seoName': 'bebe', 'link': '/original/bebe' },
+                    { 'name': 'Saks Fifth Avenue', 'seoName': 'saksfifthavenue', 'link': '/original/saksfifthavenue' },
+                    { 'name': 'Burberry', 'seoName': 'burberry', 'link': '/original/burberry' },
+                    { 'name': 'Forever21', 'seoName': 'forever21', 'link': '/original/forever21' },
+                    { 'name': 'Juicy Couture', 'seoName': 'juicycouture', 'link': '/original/juicycouture' },
+                    { 'name': 'Hugo Boss', 'seoName': 'hugoboss', 'link': '/original/hugoboss' },
+                    { 'name': 'Armani Exchange', 'seoName': 'armaniexchange', 'link': '/original/armaniexchange' },
+                    { 'name': 'Carter\'s', 'seoName': 'carters', 'link': '/original/carters' },
+                    { 'name': 'Neiman Marcus', 'seoName': 'neimanmarcus', 'link': '/original/neimanmarcus' },
+                     /* { 'name': 'Harley-Davidson', 'seoName': 'harleydavidson' },  */
+                    /* { 'name': 'Gap', 'seoName': 'gap' }, * */
+
+
+
+
+                ]
+
+                window.onresize = resize;
+
+                function resize()
+                {
+                   fillBrands(window.screen.width);
+                }
+
+                function createBrandsForCarousel(arr, count) {
+                    var arrLength = arr.length;
+                    var carouselItemsCount = parseFloat(arrLength / count);
+                    var brandsForCarousel = [];
+                    for (var i = 0; i < carouselItemsCount; i++) {
+                        var s = i * count;
+                        var e = s + count;
+                        brandsForCarousel.push(arr.slice(s, e));
+                    }
+                    return brandsForCarousel;
+                }       
+                fillBrands(window.screen.width);  
+
+               function fillBrands(width){
+                   console.log(width)
+                        if(width <= 540){
+                        $scope.brandsForCarousel = createBrandsForCarousel(brands, 3);
+                        }
+                        else if(540 < width && width <= 768){
+                            $scope.brandsForCarousel = createBrandsForCarousel(brands, 4);
+                        }
+                        else if(768 < width && width  <= 1024){
+                            $scope.brandsForCarousel = createBrandsForCarousel(brands, 5);
+                        }
+                        else if(768 < width && width <= 1200){
+                            $scope.brandsForCarousel = createBrandsForCarousel(brands, 6);
+                        }
+                        else if(1200 < width && width  <= 1400){
+                            $scope.brandsForCarousel = createBrandsForCarousel(brands, 7);
+                        }
+                        else if(1400 < width && width  <= 1680){
+                            $scope.brandsForCarousel = createBrandsForCarousel(brands, 8);
+                        }
+                        else if(width > 1680){
+                            $scope.brandsForCarousel = createBrandsForCarousel(brands, 10);
+                        }
+                }      
+            }
+        }
+    })
+    .directive('kullanimSartlari', function () {
+        return {
+            restrict: 'E',
+            templateUrl: '/app/templates/kullanim-sartlari.html',
+            controller: function ($scope) {
+                console.log('kullanimSartlari Directive');
+            }
+        }
+    })
+    .directive('termsAndConditions', function () {
+        return {
+            restrict: 'E',
+            templateUrl: '/app/templates/terms-and-conditions.html',
+            controller: function ($scope) {
+                console.log('termsAndConditions Directive');
+            }
+        }
+    })
+    .factory('signupHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/signup', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('signinHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/signin', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('signinforcsHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/signinforcs', {},
+            {
+                save: {method: 'POST'}
+            });
+    }])
+    .factory('buyForMeNewHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'bfm/newProduct', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('forgotPasswordHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/forgotpassword', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('changePasswordHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'user/changepassword', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('membershipPaymentHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'payment/membership', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('promotionCheckHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'campaign/promotioncheck', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('campaignHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'campaign/pagecampaign', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('autoCompleteHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'brands/autocomplete/:name', { name: '@name' },
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('bannerHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'banner/1', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+    .factory('warningHandler', ['$resource', function ($resource) {
+        return $resource(apiUrl + 'parameter/mainpagewarning', {},
+            {
+                get: { method: 'GET' },
+                save: { method: 'POST' },
+                query: { method: 'GET' },
+                remove: { method: 'DELETE' },
+                update: { method: 'PUT' }
+            });
+    }])
+
+    .controller('viewAsUserController', ['$scope','signinforcsHandler','$cookies','$location', function ($scope, signinforcsHandler,$cookies,$location) {
+        var data =  {"p": getUrlParameter('p'), "pid": getUrlParameter('pid')}
+
+        var signin = signinforcsHandler.save({}, data, function () {
+            console.log(signin);
+            if (signin.Result == 200) {
+                console.log("Success SignIn");
+                $cookies.put('bearer', signin.Data.Token);
+                $cookies.put('PaidMember', signin.Data.PaidMember);
+                ///uyenin kullanıcı odemesi yapıp yapmadıgı test ediliyor
+                // if ($cookies.get('PaidMember') == "false") {
+                //     window.open("/uye-ol-uyelik-tipi", "_self");
+                // }
+                window.open("/","_self")
+            } else {
+                return alert(signin.Message);
+            }
+        })
+
+
+    }])
+    .controller('campaignController' [
+        'vcRecaptchaService',
+        'contactHandler',
+    function ($scope, $sce, campaignHandler, vcRecaptchaService, contactHandler) {
+        console.log("campaign Controller");
+        $scope.contact = {
+            "FirstName": null,
+            "LastName": null,
+            "Phone": null,
+            "Email": null,
+            "Subject": null,
+            "Message": null,
+            "MessageCopyAccepted": false,
+            "NewsletterAccepted": false
+        };
+
+        console.log("this is your app's controller");
+        $scope.response = null;
+        $scope.widgetId = null;
+
+        $scope.rModel = {
+            key: '6LeZSMcZAAAAAPIP6KeOVHAxE9cWY8ffSMknn4Do'
+        };
+
+        $scope.setResponse = function (response) {
+            console.info('Response available', response);
+            $scope.response = response;
+        };
+
+        $scope.setWidgetId = function (widgetId) {
+            console.info('Created widget ID: %s', widgetId);
+            $scope.widgetId = widgetId;
+        };
+
+        $scope.cbExpiration = function () {
+            console.info('Captcha expired. Resetting response object');
+            vcRecaptchaService.reload($scope.widgetId);
+            $scope.response = null;
+        };
+
+        $scope.sendContactMessageFromPage = function (contact) {
+            $scope.sendContactMessageError = "";
+            $scope.contactMessageSending = true;
+            if ($scope.response) {
+                contact.reCaptchaResponse = $scope.response;
+                console.log(contact);
+
+                var handler = contactHandler.save({}, contact, function () {
+                    if (handler.Result == 200) {
+                        $scope.sendContactMessageSuccess = true;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+
+                    } else if (handler.Result == 400 && handler.data && data.ReCaptchaResponse == $scope.response) {
+                        var msg = siteLang == "tr_TR" ?
+                            "Gerçek kullanıcı olduğunuzu onaylayamadık!" :
+                            "We cannot validate you are a human!";
+                        $scope.sendContactMessageError = handler.Message;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+                        return;
+                    } else if (handler.Result == 401) {
+                        $scope.sendContactMessageError = handler.Message;
+                        $scope.cbExpiration();
+                        $scope.contactMessageSending = false;
+                        return;
+                    } else {
+                        $scope.contactMessageSending = false;
+                        $scope.sendContactMessageError = handler.Message;
+                    }
+                });
+            } else {
+                var msg = siteLang == "tr_TR" ?
+                    "Devam etmek için gerçek kullanıcı olduğunuzu onaylayınız lütfen!" :
+                    "To continue, please validate that you are a human!";
+                alert(msg)
+            }
+        }
+        var campaignSeoName = location.pathname.split("/")[2]
+
+        var data = {
+            "CampaignKey": campaignSeoName
+        }
+        $scope.campaignHtml = "";
+        var handler = campaignHandler.save({}, data, function () {
+            if (handler.Result == 200) {
+                $scope.campaignHtml = $sce.trustAsHtml(handler.Data.Content);
+                console.log("campaignHandler servisine Baglandı");
+            } else {
+                $scope.letMeKnowError = handler.Message;
+                console.error("campaignHandler servisine Baglanamadı");
+            }
+        });
+
+    }]);
+
+//Lean javascript
+function setCookie(cname, cvalue, exdays) {
+    var d = new Date();
+    d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
+    var expires = "expires=" + d.toUTCString();
+    document.cookie = cname + "=" + cvalue + ";" + expires + ";path=/";
+}
+function getCookie(cname) {
+    var name = cname + "=";
+    var decodedCookie = decodeURIComponent(document.cookie);
+    var ca = decodedCookie.split(';');
+    for (var i = 0; i < ca.length; i++) {
+        var c = ca[i];
+        while (c.charAt(0) == ' ') {
+            c = c.substring(1);
+        }
+        if (c.indexOf(name) == 0) {
+            return c.substring(name.length, c.length);
+        }
+    }
+    return "";
+}
+function addItem() {
+
+}
+
+
+$(document).ready(function () {
+    $('[data-toggle="tooltip"]').tooltip();
+    try { $('.slick').slick({ autoplay: true }); }
+    catch { console.error('Couldnt find slick') }
+});
+
+/////dinamik olarak js dosyası eklme kodları
+
+function loadJs(file) { ///dinamik olarak css dosyası ekleme
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = file;
+    script.onload = function () {
+        //alert("Script is ready!"); 
+        console.log(file + ' Script is hazır.');
+    };
+    document.body.appendChild(script);
+}
+
+function loadCss(file) {  ///dinamik olarak css dosyası ekleme
+    var link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = file;
+    link.onload = function () {
+        //alert("link is ready!"); 
+        console.log(file + ' link is hazır.');
+    };
+    document.head.appendChild(link);
+}
+
+function getUrlParameter(param, dummyPath) {
+    var sPageURL = dummyPath || window.location.search.substring(1),
+        sURLVariables = sPageURL.split(/[&||?]/),
+        res;
+
+    for (var i = 0; i < sURLVariables.length; i += 1) {
+        var paramName = sURLVariables[i],
+            sParameterName = (paramName || '').split('=');
+
+        if (sParameterName[0] === param) {
+            res = sParameterName[1];
+        }
+    }
+
+    return res;
+}
+
+loadCss("https://use.fontawesome.com/releases/v5.6.3/css/all.css");
+
+/* //Google Analytics
+(function (i, s, o, g, r, a, m) {
+    i['GoogleAnalyticsObject'] = r; i[r] = i[r] || function () {
+        (i[r].q = i[r].q || []).push(arguments)
+    }, i[r].l = 1 * new Date(); a = s.createElement(o),
+        m = s.getElementsByTagName(o)[0]; a.async = 1; a.src = g; m.parentNode.insertBefore(a, m)
+})(window, document, 'script', 'https://www.google-analytics.com/analytics.js', 'ga');
+
+ga('create', 'UA-351438-2', 'auto');
+ga('send', 'pageview');
+//End Google Analytics */
