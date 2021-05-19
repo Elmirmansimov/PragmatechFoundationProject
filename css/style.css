@@ -1,114 +1,175 @@
-
 *{margin: 0px;
-padding: 0px;
-}
-
-
-#anabaşlıq{
-    background-color: black;
-    color: rgb(241, 239, 239);
-    margin: 0px;
-    padding: 150;
-    height: 45px;
-    letter-spacing: 5px;
-    text-align: center;
-}
-#ana-menu{
-    width: 80%;
-    margin-left: 10%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-
-
-}
-
-#ana-menu li{
-    padding: 30px;
-    display: inline-block;
-    list-style: none;
-    padding-right: 20px;
-    font-weight: bold;
+    padding: 0px;
+    }
     
-}
-
+    .row{
+        display: flex;
+        align-items: center;
+        justify-content: center;
     
-
-
-.button {
-    height: 35px;
-    width: 80px;
-    background-color:#ceb491 ;
-    color: white;
-    font-weight: bold;
-    text-align: center;
-    vertical-align: middle;
-    border: 1px solid transparent;
-    padding border-radius: 0.25rem;
+    }
     
-}
-
-
-
-.div2{width: 100%;
-   display: flex;
-   align-items: center;
-   justify-content: center;
-}
-#button2 {
-     height: 45px;  
-    width: 165px;
-     margin-top: 35px;
-    background-color: black;
-    color: white; 
-}
-.underline{
-    width: 10em;
-    border-top: 1px solid black;
-    margin: 0 auto;
-    margin-bottom: 2em;
-}
-
-.services-item{
-    display: flex;
-    justify-content: center;
+    #anabaslıq{
+        background-color: black;
+        color: rgb(241, 239, 239);
+        margin: 0px;
+        height: 45px;
+        letter-spacing: 5px;
+        text-align: center;
+    }
+    #ana-menu{
+        width: 80%;
+        margin-left: 10%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     
-}
-
-.baslikindex{
-    font-size: 21px;
-    font-weight: bold;
-    text-align: center;
-    margin: 10px;
-}
-.markalar{
-    display: flex;
-    margin-left: 3rem !important;
-    padding: 20px auto;
-    text-align: center;
-
-
-}
-
-
-.flex-column{
-    flex-direction: column !important;
-}
     
-.BASLIK{
-    font-size: 21px;
-    font-weight: bold;
-    text-align: center;
-    margin: 10px;
+    }
+    
+    #ana-menu li{
+        padding: 30px;
+        display: inline-block;
+        list-style: none;
+        padding-right: 20px;
+        font-weight: bold;
+        
+    }
+    
+        
+    
+    
+    .button {
+        height: 35px;
+        width: 80px;
+        background-color:#ceb491 ;
+        color: white;
+        font-weight: bold;
+        text-align: center;
+        vertical-align: middle;
+        border: 1px solid transparent;
+         border-radius: 0.25rem;
+        
+    }
+    
+    
+    
+    .div2{width: 100%;
+       display: flex;
+       align-items: center;
+       justify-content: center;
+    }
+    #button2 {
+         height: 45px;  
+        width: 165px;
+         margin-top: 35px;
+        background-color: black;
+        color: white; 
+    }
+    .underline{
+        width: 100%;
+        border-top: 1px solid black;
+        margin: 0 auto;
+        margin-bottom: 2em;
+    }
+    
+    .services-item{
+        display: flex;
+        justify-content: center;
+        
+    }
+    
+    .baslikindex{
+        font-size: 21px;
+        font-weight: bold;
+        text-align: center;
+        margin: 10px;
+    }
+    .markalar{
+        display: flex;
+      
+        padding: 20px auto;
+        text-align: center;
+        justify-content: center;
+        margin: 30px 0;
+    
+    
+    }
+    .markalar a p{
+       
+        color: black;
+    }
+    .markalar a{
+        text-decoration: none;
+        margin-right: 20px;
+    }
+    
+    .flex-column{
+        flex-direction: column !important;
+    }
+        
+    .BASLIK{
+        font-size: 21px;
+        font-weight: bold;
+        text-align: center;
+        margin: 10px;
+        
+    }
+    
+    
+    
+    .merkezsoz{
+       text-align: center;
+       font-size: 21px;
+       font-weight: bold;
+       border-bottom: 1px solid black;
+       margin: 20px 0;
+       width: 210px;
+       padding: 10px 0;
+    }
+    
+    .service-heading h5{
+        font-size: 21px;
+        text-align: center;
+    }
+    
+    .service{
+        padding: 40px 0px;
+    
+        text-align: center;
+       
+    }
+    .service-item{
+        border: 1px solid gray  ;
+        
+      
+    
+    }
+    .service-action{
+        text-align: center;
+    
+    }
+    
+    .anasoz {
+        text-align: center;
+    }
+.font{
+    background-color:#bababa;
+   
+    
+    height: 650px;
+    padding-top: 20px;
+;
+
+}
+.container text-light{
+
 }
 
-
-
-.merkezsoz{
-   text-align: center;
-   font-size: 21px;
-   font-weight: bold;
-   margin: 10px;
+.footer{
+    background: blue;
+    height: 500px;
+    width: 100%;
+    font-family: "Open sans";
+    padding-top: 40px;
 }
-
-
